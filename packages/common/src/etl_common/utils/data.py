@@ -1,6 +1,23 @@
-def clean_and_format_row(row: list, headers: list) -> list:
-    """Limpia y formatea una fila completa basándose en sus encabezados."""
-    cleaned_row = []
+_NUMERIC_KEYWORDS = (
+    "cantidad",
+    "qty",
+    "monto",
+    "amount",
+    "precio",
+    "price",
+    "bruto",
+    "neto",
+    "impuesto",
+    "tax",
+    "descuento",
+    "discount",
+    "total",
+)
+
+
+def clean_and_format_row(row: list[object], headers: list[str]) -> list[object]:
+    """Normalize a data row: strip leading quotes and coerce numeric columns."""
+    cleaned_row: list[object] = []
 
     for i, value in enumerate(row):
         if i >= len(headers):
@@ -9,22 +26,18 @@ def clean_and_format_row(row: list, headers: list) -> list:
 
         header = headers[i]
 
-        # Remover comillas del inicio
         if isinstance(value, str) and value.startswith("'"):
             value = value[1:]
 
-        # Convertir montos a números
-        numeric_keywords = [
-            'cantidad', 'qty', 'monto', 'amount', 'precio', 'price',
-            'bruto', 'neto', 'impuesto', 'tax', 'descuento', 'discount', 'total'
-        ]
-
-        if any(keyword in header.lower() for keyword in numeric_keywords):
+        if any(kw in header.lower() for kw in _NUMERIC_KEYWORDS):
             try:
                 if value and str(value).strip():
                     num_value = float(str(value))
-                    # Convertir a int si no tiene decimales
-                    value = int(num_value) if num_value == int(num_value) else round(num_value, 2)
+                    value = (
+                        int(num_value)
+                        if num_value == int(num_value)
+                        else round(num_value, 2)
+                    )
             except (ValueError, TypeError):
                 pass
 

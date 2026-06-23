@@ -2,7 +2,7 @@ import logging
 import xmlrpc.client
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 from etl_common.core.singleton_meta import SingletonMeta
 from etl_common.utils.network import execute_with_retry
@@ -13,14 +13,14 @@ logger = logging.getLogger(__name__)
 
 
 class OdooManager(metaclass=SingletonMeta):
-    def __init__(self, url: str, db: str, user: str, password: str):
+    def __init__(self, url: str, db: str, user: str, password: str) -> None:
         self.url = url
         self.db = db
         self.user = user
         self.password = password
-        self.common = None
-        self.objects = None
-        self.uid = None
+        self.common: xmlrpc.client.ServerProxy | None = None
+        self.objects: xmlrpc.client.ServerProxy | None = None
+        self.uid: int | None = None
         self._rpc_lock = Lock()
 
     def connect(self) -> int:
@@ -32,26 +32,35 @@ class OdooManager(metaclass=SingletonMeta):
         self.objects = xmlrpc.client.ServerProxy(
             f"{self.url}/xmlrpc/2/object", transport=transport
         )
-        user_agent_env = {
+        user_agent_env: dict[str, str] = {
             "base_location": self.url,
             "http_host": self.url.split("https://")[1]
             if "https://" in self.url
             else self.url,
             "remote_addr": "127.0.0.1",
         }
-        self.uid = self.common.authenticate(
+        uid: Any = self.common.authenticate(
             self.db, self.user, self.password, user_agent_env
         )
-        if not self.uid or self.uid <= 0:
-            raise ConnectionError(f"Autenticacion fallida - uid={self.uid}")
+        if not uid or uid <= 0:
+            raise ConnectionError(f"Autenticacion fallida - uid={uid}")
+        self.uid = int(uid)
         logger.info(f"Conectado a Odoo como UID: {self.uid}")
         return self.uid
 
     def _execute(
-        self, model: str, method: str, args: list, kwargs: dict, operation_name: str
-    ):
-        """Wrapper thread-safe para lecturas. TODOS los metodos de lectura pasan por aqui."""
+        self,
+        model: str,
+        method: str,
+        args: list[Any],
+        kwargs: dict[str, Any],
+        operation_name: str,
+    ) -> Any:
+        # Thread-safe wrapper: all RPC calls serialize through the shared lock.
         with self._rpc_lock:
+            assert self.objects is not None, (
+                "OdooManager.connect() must be called first"
+            )
             return execute_with_retry(
                 self.objects.execute_kw,
                 self.db,
@@ -65,78 +74,76 @@ class OdooManager(metaclass=SingletonMeta):
             )
 
     def search(
-        self, model: str, domain: List, order: Optional[str] = None
-    ) -> List[int]:
-        kwargs = {}
+        self, model: str, domain: list[Any], order: str | None = None
+    ) -> list[int]:
+        kwargs: dict[str, Any] = {}
         if order:
             kwargs["order"] = order
-        return self._execute(
+        result: list[int] = self._execute(
             model, "search", [domain], kwargs, f"Search {model} records"
         )
+        return result
 
     def read(
-        self, model: str, ids: List[int], fields: List[str]
-    ) -> List[Dict[str, Any]]:
-        return self._execute(
+        self, model: str, ids: list[int], fields: list[str]
+    ) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = self._execute(
             model,
             "read",
             [ids],
             {"fields": fields},
             f"Read {model} ({len(ids)} records)",
         )
+        return result
 
     def search_read(
         self,
         model: str,
-        domain: List,
-        fields: List[str],
-        limit: Optional[int] = None,
-        order: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        kwargs = {"fields": fields}
+        domain: list[Any],
+        fields: list[str],
+        limit: int | None = None,
+        order: str | None = None,
+    ) -> list[dict[str, Any]]:
+        kwargs: dict[str, Any] = {"fields": fields}
         if limit:
             kwargs["limit"] = limit
         if order:
             kwargs["order"] = order
-        return self._execute(
+        result: list[dict[str, Any]] = self._execute(
             model, "search_read", [domain], kwargs, f"Search and read {model}"
         )
+        return result
 
-    def write(self, model: str, ids: List[int], values: Dict[str, Any]) -> bool:
-        return self._execute(model, "write", [ids, values], {}, f"Write {model}")
+    def write(self, model: str, ids: list[int], values: dict[str, Any]) -> bool:
+        result: bool = self._execute(
+            model, "write", [ids, values], {}, f"Write {model}"
+        )
+        return result
 
-    def create(
-        self, model: str, values: Union[Dict[str, Any], List[Dict[str, Any]]]
-    ) -> Any:
-        """Dict -> 1 registro. List[Dict] -> N registros en 1 sola llamada RPC."""
+    def create(self, model: str, values: dict[str, Any] | list[dict[str, Any]]) -> Any:
+        """Single dict creates one record; list of dicts creates N in one RPC call."""
         return self._execute(model, "create", [values], {}, f"Create {model}")
 
-    def unlink(self, model: str, ids: List[int]) -> bool:
-        return self._execute(model, "unlink", [ids], {}, f"Delete {model}")
+    def unlink(self, model: str, ids: list[int]) -> bool:
+        result: bool = self._execute(model, "unlink", [ids], {}, f"Delete {model}")
+        return result
 
     def write_many_parallel(
         self,
         model: str,
-        writes: List[Tuple[int, Dict[str, Any]]],
+        writes: list[tuple[int, dict[str, Any]]],
         max_workers: int = 8,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """
-        Ejecuta multiples writes en paralelo, cada thread con su propia
-        conexion XML-RPC para no bloquear el ServerProxy compartido.
+        Execute multiple writes in parallel, each thread with its own XML-RPC
+        connection to avoid contention on the shared ServerProxy.
 
-        Args:
-            model:       Modelo de Odoo (ej: 'product.pricelist.item')
-            writes:      Lista de (item_id, values) a escribir
-            max_workers: Threads en paralelo (recomendado 8 para Odoo SaaS)
-
-        Returns:
-            (success_count, failed_count)
+        Returns (success_count, failed_count).
         """
         if not writes:
             return 0, 0
 
-        def _write_one(item_id: int, values: Dict[str, Any]) -> Tuple[int, bool]:
-            # Conexion propia por thread — no comparte ServerProxy con nadie
+        def _write_one(item_id: int, values: dict[str, Any]) -> tuple[int, bool]:
             transport = CustomHTTPSTransport(verify_ssl=False)
             objects = xmlrpc.client.ServerProxy(
                 f"{self.url}/xmlrpc/2/object",
@@ -165,14 +172,12 @@ class OdooManager(metaclass=SingletonMeta):
                 executor.submit(_write_one, item_id, values): item_id
                 for item_id, values in writes
             }
-            done = 0
-            for future in as_completed(futures):
+            for done, future in enumerate(as_completed(futures), start=1):
                 _, ok = future.result()
                 if ok:
                     success += 1
                 else:
                     failed += 1
-                done += 1
                 if done % 100 == 0:
                     logger.info(f"  Progreso writes: {done}/{total}...")
 
