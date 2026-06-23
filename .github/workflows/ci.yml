@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: Lint (ruff)
+        run: uv run ruff check .
+      - name: Format (ruff)
+        run: uv run ruff format --check .
+      - name: Types (mypy)
+        run: uv run mypy
+      - name: Types (pyright)
+        run: uv run pyright
+      - name: Tests (pytest)
+        run: uv run pytest
+      - name: Conventional commits
+        if: github.event_name == 'pull_request'
+        run: uv run cz check --rev-range ${{ github.event.pull_request.base.sha }}..HEAD
