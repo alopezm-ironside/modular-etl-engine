@@ -25,7 +25,7 @@ from etl_common.interfaces.extractor_interface import ExtractorInterface
 from etl_common.interfaces.repository_interface import RepositoryInterface
 from etl_common.interfaces.sync_state_interface import SyncStateInterface, SyncStats
 from etl_common.interfaces.transformer_interface import TransformerInterface
-from etl_common.observability.logging import get_logger
+from etl_common.observability.gcp_logging import get_logger
 
 T = TypeVar("T")
 

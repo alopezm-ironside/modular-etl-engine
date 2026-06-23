@@ -1,5 +1,6 @@
-"""Structured JSON logging: configures structlog to emit single-line JSON on
-stdout, which Cloud Run / Cloud Logging parse without extra agent config."""
+"""GCP structured logging: configures structlog to emit single-line JSON on
+stdout with the ``severity`` key Cloud Logging recognises, so Cloud Run ingests
+logs without an agent or sink config."""
 
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ _LEVEL_TO_SEVERITY: dict[str, str] = {
 
 
 def _add_severity(
-    _logger: Any,
+    _: Any,
     method: str,
     event_dict: MutableMapping[str, Any],
 ) -> EventDict:
@@ -31,8 +32,8 @@ def _add_severity(
     return event_dict
 
 
-def configure_logging() -> None:
-    """Wire the structlog JSON pipeline. Idempotent; call once at the
+def configure_gcp_logging() -> None:
+    """Wire the structlog GCP-JSON pipeline. Idempotent; call once at the
     composition root before any log call or context binding."""
     global _configured
     if _configured:

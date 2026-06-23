@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 import pytest
-from etl_common.observability.logging import configure_logging, get_logger
+from etl_common.observability.gcp_logging import configure_gcp_logging, get_logger
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
 # ---------------------------------------------------------------------------
@@ -17,18 +17,18 @@ from structlog.contextvars import bind_contextvars, clear_contextvars
 
 def _configure_test_logging() -> None:
     """Configure structlog to render JSON to stdout for testing."""
-    configure_logging()
+    configure_gcp_logging()
 
 
 # ---------------------------------------------------------------------------
-# 3.2 — configure_logging + emit → valid single-line JSON with severity+message
+# 3.2 — configure_gcp_logging + emit → valid single-line JSON with severity+message
 # ---------------------------------------------------------------------------
 
 
 def test_log_output_is_valid_single_line_json(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A log call after configure_logging() emits valid JSON with severity+message."""
+    """Emits valid single-line JSON with severity + message keys."""
     clear_contextvars()
     _configure_test_logging()
 
@@ -99,15 +99,17 @@ def test_clear_contextvars_removes_bound_context(
 
 
 # ---------------------------------------------------------------------------
-# 3.4 — configure_logging() is idempotent (no duplicate processors)
+# 3.4 — configure_gcp_logging() is idempotent (no duplicate processors)
 # ---------------------------------------------------------------------------
 
 
-def test_configure_logging_is_idempotent(capsys: pytest.CaptureFixture[str]) -> None:
-    """Calling configure_logging() twice does not duplicate log output."""
+def test_configure_gcp_logging_is_idempotent(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Calling configure_gcp_logging() twice does not duplicate log output."""
     clear_contextvars()
-    configure_logging()
-    configure_logging()  # second call — must not add duplicate processors
+    configure_gcp_logging()
+    configure_gcp_logging()  # second call — must not add duplicate processors
 
     log = get_logger("test")
     log.info("idempotent_test")
@@ -134,7 +136,7 @@ def test_sync_pipeline_emits_structured_log_events(
     from etl_common.sync_pipeline import SyncPipeline
 
     clear_contextvars()
-    configure_logging()
+    configure_gcp_logging()
 
     @dataclass
     class Ent:
@@ -194,7 +196,7 @@ def test_sync_pipeline_emits_run_failed_on_exception(
     from etl_common.sync_pipeline import SyncPipeline
 
     clear_contextvars()
-    configure_logging()
+    configure_gcp_logging()
 
     @dataclass
     class Ent:

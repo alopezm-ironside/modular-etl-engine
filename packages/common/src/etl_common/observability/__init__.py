@@ -1,9 +1,3 @@
-"""etl_common.observability — structured logging for the ETL pipeline.
+from etl_common.observability.gcp_logging import configure_gcp_logging, get_logger
 
-Re-exports the public surface of the logging module so callers can do:
-    from etl_common.observability import configure_logging, get_logger
-"""
-
-from etl_common.observability.logging import configure_logging, get_logger
-
-__all__ = ["configure_logging", "get_logger"]
+__all__ = ["configure_gcp_logging", "get_logger"]
