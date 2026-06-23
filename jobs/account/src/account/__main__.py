@@ -59,6 +59,7 @@ def main() -> None:
         transformer=transformer,
         repository=repository,
         sync_state=sync_state,
+        batch_size=settings.BATCH_SIZE,
     ).run()
 
 

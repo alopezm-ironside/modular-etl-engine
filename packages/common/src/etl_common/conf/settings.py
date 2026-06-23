@@ -17,4 +17,7 @@ class Settings(BaseSettings):
     BQ_DATASET_RAW: str
     BQ_DATASET_CONTROL: str
 
+    # Pipeline tuning (env-overridable)
+    BATCH_SIZE: int = 1000
+
     model_config = SettingsConfigDict(env_file=".env")
