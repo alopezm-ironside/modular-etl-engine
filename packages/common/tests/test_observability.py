@@ -1,36 +1,39 @@
-"""Tests for etl_common observability — structlog JSON output and context binding."""
+"""Tests for etl_common observability — pluggable backends, factory, and get_logger."""
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
-from unittest.mock import MagicMock
 
 import pytest
-from etl_common.observability.gcp_logging import configure_gcp_logging, get_logger
+from etl_common.observability import configure_logging, get_logger, resolve_backend
+from etl_common.observability.backends import ConsoleLogBackend, GcpLogBackend
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
 # ---------------------------------------------------------------------------
-# Helpers
+# get_logger
 # ---------------------------------------------------------------------------
 
 
-def _configure_test_logging() -> None:
-    """Configure structlog to render JSON to stdout for testing."""
-    configure_gcp_logging()
+def test_get_logger_returns_bound_logger() -> None:
+    """get_logger returns a structlog BoundLogger usable for info/warning/error."""
+    log = get_logger("test.module")
+    # A bound logger responds to info/warning/error without raising
+    assert hasattr(log, "info")
+    assert hasattr(log, "warning")
+    assert hasattr(log, "error")
 
 
 # ---------------------------------------------------------------------------
-# 3.2 — configure_gcp_logging + emit → valid single-line JSON with severity+message
+# GcpLogBackend — single-line JSON with severity + message + bound context
 # ---------------------------------------------------------------------------
 
 
-def test_log_output_is_valid_single_line_json(
+def test_gcp_backend_emits_json_with_severity_and_message(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Emits valid single-line JSON with severity + message keys."""
+    """GcpLogBackend: log emits valid single-line JSON with severity + message keys."""
     clear_contextvars()
-    _configure_test_logging()
+    configure_logging(GcpLogBackend())
 
     log = get_logger("test")
     log.info("test_event", extra_field="hello")
@@ -40,24 +43,18 @@ def test_log_output_is_valid_single_line_json(
     assert len(lines) >= 1, f"Expected at least 1 log line, got: {captured.out!r}"
 
     parsed = json.loads(lines[-1])
-
     assert "severity" in parsed, f"'severity' key missing in: {parsed}"
     assert "message" in parsed, f"'message' key missing in: {parsed}"
     assert parsed["message"] == "test_event"
     assert parsed["severity"].upper() == "INFO"
 
 
-# ---------------------------------------------------------------------------
-# 3.3 — bind_contextvars → fields propagate; clear_contextvars → gone
-# ---------------------------------------------------------------------------
-
-
-def test_bound_context_propagates_to_log_output(
+def test_gcp_backend_propagates_bound_context(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Context bound via bind_contextvars appears in emitted log JSON."""
+    """GcpLogBackend: context bound via bind_contextvars appears in emitted JSON."""
     clear_contextvars()
-    _configure_test_logging()
+    configure_logging(GcpLogBackend())
 
     bind_contextvars(module="accounting", sync_batch_id="batch-xyz")
     log = get_logger("test")
@@ -76,12 +73,12 @@ def test_bound_context_propagates_to_log_output(
     clear_contextvars()
 
 
-def test_clear_contextvars_removes_bound_context(
+def test_gcp_backend_clear_contextvars_removes_context(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """After clear_contextvars(), bound fields no longer appear in logs."""
+    """After clear_contextvars(), bound fields no longer appear in GCP JSON."""
     clear_contextvars()
-    _configure_test_logging()
+    configure_logging(GcpLogBackend())
 
     bind_contextvars(module="accounting", sync_batch_id="batch-xyz")
     clear_contextvars()
@@ -94,29 +91,68 @@ def test_clear_contextvars_removes_bound_context(
     assert lines, "No log output captured"
 
     parsed = json.loads(lines[-1])
-    assert "module" not in parsed, f"module should be gone after clear: {parsed}"
-    assert "sync_batch_id" not in parsed, f"sync_batch_id should be gone: {parsed}"
+    assert "module" not in parsed, f"module should be absent after clear: {parsed}"
+    assert "sync_batch_id" not in parsed, (
+        f"sync_batch_id should be absent after clear: {parsed}"
+    )
 
 
 # ---------------------------------------------------------------------------
-# 3.4 — configure_gcp_logging() is idempotent (no duplicate processors)
+# ConsoleLogBackend — human-readable, NOT valid JSON
 # ---------------------------------------------------------------------------
 
 
-def test_configure_gcp_logging_is_idempotent(
+def test_console_backend_output_is_not_json(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Calling configure_gcp_logging() twice does not duplicate log output."""
+    """ConsoleLogBackend: output is human-readable text, NOT valid JSON."""
     clear_contextvars()
-    configure_gcp_logging()
-    configure_gcp_logging()  # second call — must not add duplicate processors
+    configure_logging(ConsoleLogBackend())
+
+    log = get_logger("test")
+    log.info("console_event", key="value")
+
+    captured = capsys.readouterr()
+    lines = [line for line in captured.out.splitlines() if line.strip()]
+    assert lines, "No output from ConsoleLogBackend"
+
+    # Must not be parseable as JSON
+    with pytest.raises((json.JSONDecodeError, ValueError)):
+        json.loads(lines[-1])
+
+
+def test_console_backend_output_contains_event(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """ConsoleLogBackend: emitted line contains the event name."""
+    clear_contextvars()
+    configure_logging(ConsoleLogBackend())
+
+    log = get_logger("test")
+    log.info("hello_console")
+
+    captured = capsys.readouterr()
+    assert "hello_console" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# configure_logging is idempotent — second call does not duplicate output
+# ---------------------------------------------------------------------------
+
+
+def test_configure_logging_is_idempotent(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Calling configure_logging() twice does not produce duplicate log lines."""
+    clear_contextvars()
+    configure_logging(GcpLogBackend())
+    configure_logging(GcpLogBackend())  # second call — must not duplicate processors
 
     log = get_logger("test")
     log.info("idempotent_test")
 
     captured = capsys.readouterr()
     lines = [line for line in captured.out.splitlines() if line.strip()]
-    # If processors were doubled, we might get 2 lines for one log call
     assert len(lines) == 1, (
         f"Expected exactly 1 log line (idempotent), got {len(lines)}: {lines}"
     )
@@ -125,7 +161,30 @@ def test_configure_gcp_logging_is_idempotent(
 
 
 # ---------------------------------------------------------------------------
-# 3.7 — SyncPipeline emits run_started, batch_processed, run_finished events
+# resolve_backend factory
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_backend_gcp_returns_gcp_instance() -> None:
+    """resolve_backend('gcp') returns a GcpLogBackend instance."""
+    backend = resolve_backend("gcp")
+    assert isinstance(backend, GcpLogBackend)
+
+
+def test_resolve_backend_console_returns_console_instance() -> None:
+    """resolve_backend('console') returns a ConsoleLogBackend instance."""
+    backend = resolve_backend("console")
+    assert isinstance(backend, ConsoleLogBackend)
+
+
+def test_resolve_backend_unknown_raises_value_error() -> None:
+    """resolve_backend raises ValueError for unknown backend names."""
+    with pytest.raises(ValueError, match="bogus"):
+        resolve_backend("bogus")
+
+
+# ---------------------------------------------------------------------------
+# SyncPipeline integration — emits run_started, batch_processed, run_finished
 # ---------------------------------------------------------------------------
 
 
@@ -133,10 +192,13 @@ def test_sync_pipeline_emits_structured_log_events(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """SyncPipeline.run() emits run_started, batch_processed, run_finished."""
+    from dataclasses import dataclass
+    from unittest.mock import MagicMock
+
     from etl_common.sync_pipeline import SyncPipeline
 
     clear_contextvars()
-    configure_gcp_logging()
+    configure_logging(GcpLogBackend())
 
     @dataclass
     class Ent:
@@ -179,7 +241,6 @@ def test_sync_pipeline_emits_structured_log_events(
     )
     assert "run_finished" in event_names, f"run_finished missing; got: {event_names}"
 
-    # Verify context fields are present in run_started event
     run_started = next(
         e for e in events if (e.get("message") or e.get("event")) == "run_started"
     )
@@ -193,10 +254,13 @@ def test_sync_pipeline_emits_run_failed_on_exception(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """SyncPipeline.run() emits run_failed event when an exception occurs."""
+    from dataclasses import dataclass
+    from unittest.mock import MagicMock
+
     from etl_common.sync_pipeline import SyncPipeline
 
     clear_contextvars()
-    configure_gcp_logging()
+    configure_logging(GcpLogBackend())
 
     @dataclass
     class Ent:

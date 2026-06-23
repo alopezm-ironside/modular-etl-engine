@@ -1,4 +1,4 @@
-import etl_common.observability.gcp_logging as gcp_logging
+import etl_common.observability as observability
 import pytest
 import structlog
 from etl_common.core.singleton_meta import SingletonMeta
@@ -10,7 +10,7 @@ def _isolate_global_state():
     """Reset process-global state between tests so random ordering is safe."""
     clear_contextvars()
     structlog.reset_defaults()
-    gcp_logging._configured = False
+    observability._configured = False
     SingletonMeta._instances.clear()
     yield
     clear_contextvars()
