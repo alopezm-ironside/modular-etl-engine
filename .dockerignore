@@ -1,0 +1,27 @@
+# VCS
+.git
+.gitignore
+
+# Python caches and virtualenv
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Tests and test config (must not enter the image build context)
+**/tests/
+conftest.py
+
+# Docs and markdown
+docs/
+**/*.md
+
+# Dev tooling and local-only
+.github/
+lefthook.yml
+.atl/
+pyrightconfig.json
+
+# Env and secrets
+.env
+.env.*
