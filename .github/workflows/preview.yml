@@ -72,9 +72,16 @@ jobs:
                 "${{ vars.GCP_PROJECT }}:${ds}"
           done
 
-      - name: Deploy ephemeral job
+      - name: Deploy ephemeral job (create or update)
         run: |
-          gcloud run jobs deploy "${{ steps.names.outputs.job }}" \
+          job="${{ steps.names.outputs.job }}"
+          if gcloud run jobs describe "$job" \
+               --region "${{ vars.REGION }}" --project "${{ vars.GCP_PROJECT }}" >/dev/null 2>&1; then
+            action=update
+          else
+            action=create
+          fi
+          gcloud run jobs "$action" "$job" \
             --image "${{ steps.names.outputs.image }}" \
             --region "${{ vars.REGION }}" \
             --project "${{ vars.GCP_PROJECT }}" \
