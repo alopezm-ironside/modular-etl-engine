@@ -56,7 +56,7 @@ def test_gcp_backend_propagates_bound_context(
     clear_contextvars()
     configure_logging(GcpLogBackend())
 
-    bind_contextvars(module="accounting", sync_batch_id="batch-xyz")
+    bind_contextvars(etl_module="accounting", sync_batch_id="batch-xyz")
     log = get_logger("test")
     log.info("context_test_event")
 
@@ -65,7 +65,7 @@ def test_gcp_backend_propagates_bound_context(
     assert lines, "No log output captured"
 
     parsed = json.loads(lines[-1])
-    assert parsed.get("module") == "accounting", f"module missing: {parsed}"
+    assert parsed.get("etl_module") == "accounting", f"etl_module missing: {parsed}"
     assert parsed.get("sync_batch_id") == "batch-xyz", (
         f"sync_batch_id missing: {parsed}"
     )
@@ -80,7 +80,7 @@ def test_gcp_backend_clear_contextvars_removes_context(
     clear_contextvars()
     configure_logging(GcpLogBackend())
 
-    bind_contextvars(module="accounting", sync_batch_id="batch-xyz")
+    bind_contextvars(etl_module="accounting", sync_batch_id="batch-xyz")
     clear_contextvars()
 
     log = get_logger("test")
@@ -91,10 +91,50 @@ def test_gcp_backend_clear_contextvars_removes_context(
     assert lines, "No log output captured"
 
     parsed = json.loads(lines[-1])
-    assert "module" not in parsed, f"module should be absent after clear: {parsed}"
+    assert "etl_module" not in parsed, (
+        f"etl_module should be absent after clear: {parsed}"
+    )
     assert "sync_batch_id" not in parsed, (
         f"sync_batch_id should be absent after clear: {parsed}"
     )
+
+
+def test_gcp_backend_uses_time_field_for_timestamp(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """GcpLogBackend emits the timestamp under GCP's recognised `time` field."""
+    clear_contextvars()
+    configure_logging(GcpLogBackend())
+
+    log = get_logger("test")
+    log.info("time_event")
+
+    parsed = json.loads(
+        [line for line in capsys.readouterr().out.splitlines() if line.strip()][-1]
+    )
+    assert "time" in parsed, f"'time' field missing: {parsed}"
+    assert "timestamp" not in parsed, f"unexpected 'timestamp' field: {parsed}"
+
+
+def test_gcp_backend_routes_exception_to_error_reporting(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An exc_info log emits a stack_trace in GCP Error Reporting format."""
+    clear_contextvars()
+    configure_logging(GcpLogBackend())
+
+    log = get_logger("test")
+    try:
+        raise ValueError("boom")
+    except ValueError:
+        log.error("failed_event", exc_info=True)
+
+    parsed = json.loads(
+        [line for line in capsys.readouterr().out.splitlines() if line.strip()][-1]
+    )
+    assert "stack_trace" in parsed, f"'stack_trace' missing: {parsed}"
+    assert "ValueError: boom" in parsed["stack_trace"]
+    assert "ReportedErrorEvent" in parsed.get("@type", "")
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +284,9 @@ def test_sync_pipeline_emits_structured_log_events(
     run_started = next(
         e for e in events if (e.get("message") or e.get("event")) == "run_started"
     )
-    assert "module" in run_started, f"module missing from run_started: {run_started}"
+    assert "etl_module" in run_started, (
+        f"etl_module missing from run_started: {run_started}"
+    )
     assert "sync_batch_id" in run_started, (
         f"sync_batch_id missing from run_started: {run_started}"
     )

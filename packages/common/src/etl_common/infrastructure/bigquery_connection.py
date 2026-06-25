@@ -23,6 +23,8 @@ class BigQueryConnection(metaclass=SingletonMeta):
         self.credentials = credentials
         self.project_id = project_id
         self.location = location
+        self.raw_dataset = raw_dataset
+        self.control_dataset = control_dataset
         self.bq_client = bigquery.Client(
             project=self.project_id, location=self.location
         )
