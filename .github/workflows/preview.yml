@@ -31,7 +31,7 @@ jobs:
        (github.event.action == 'synchronize' &&
          contains(github.event.pull_request.labels.*.name, 'preview')))
     runs-on: ubuntu-latest
-    environment: dev
+    environment: preview
     steps:
       - uses: actions/checkout@v5
 
@@ -121,7 +121,8 @@ jobs:
             echo ""
             echo "Para bajar el preview: quitá el label \`preview\` o cerrá el PR."
           } > preview-comment.md
-          gh pr comment "${{ github.event.pull_request.number }}" --body-file preview-comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" --body-file preview-comment.md
 
   teardown:
     # Tear down when the label is removed, or the PR (that had the label) closes.
@@ -131,7 +132,7 @@ jobs:
        (github.event.action == 'closed' &&
          contains(github.event.pull_request.labels.*.name, 'preview')))
     runs-on: ubuntu-latest
-    environment: dev
+    environment: preview
     steps:
       - uses: google-github-actions/auth@v3
         with:
@@ -166,4 +167,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
             --body "🧹 Preview dado de baja (job + datasets eliminados)."
