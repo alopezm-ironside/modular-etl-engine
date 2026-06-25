@@ -381,6 +381,7 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "sqlalchemy-bigquery" },
     { name = "structlog" },
+    { name = "structlog-gcp" },
 ]
 
 [package.optional-dependencies]
@@ -396,6 +397,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.45" },
     { name = "sqlalchemy-bigquery", specifier = ">=1.16.0" },
     { name = "structlog", specifier = ">=24.1.0" },
+    { name = "structlog-gcp", specifier = ">=0.5.0" },
 ]
 provides-extras = ["postgres"]
 
@@ -1461,6 +1463,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/5e/89/b4a0bcfdf4f71a3dea31379f095929613d7e4528a0996bca6aa964cd0dca/structlog-26.1.0.tar.gz", hash = "sha256:f63a716cbd1b1291cf7661de7794b455acfa4c43c5bcf1630e6ad5ddc1adb3b7", size = 1459881, upload-time = "2026-06-06T07:33:39.348Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a9/18/489c97b834dfff9cf2fc2507cede4bcd4b11e67f84bc462acd1992496f86/structlog-26.1.0-py3-none-any.whl", hash = "sha256:e081a26d6c373e6d201eca24eede26d8ffab07f88f477822e679183428d3d91e", size = 73764, upload-time = "2026-06-06T07:33:38.046Z" },
+]
+
+[[package]]
+name = "structlog-gcp"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "structlog" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/07/f9/f305098c1bb4f4f3aeb017accf6ca6f60ce24d33b54b3ef19d4971f39118/structlog_gcp-0.5.0.tar.gz", hash = "sha256:361da96886023e6fb8fa49f60f5278aff666820c8987534ca61e091b32047592", size = 117939, upload-time = "2025-07-13T10:01:53.925Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2f/2d/a63e143137574f524446731eb9e9358cda09af5232fe9f42ab6831be1194/structlog_gcp-0.5.0-py3-none-any.whl", hash = "sha256:95d4611e2ae8e8c1cc6b18b580c3060240bb47dc1c6f62ae8619c7b823949677", size = 9650, upload-time = "2025-07-13T10:01:52.519Z" },
 ]
 
 [[package]]

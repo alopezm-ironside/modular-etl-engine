@@ -73,9 +73,10 @@ class SyncPipeline(Generic[T]):
         last_processed_id = watermark
         sync_batch_id = self._sync_state.start(self._module_name)
 
-        # Bind once so every log line in the run carries module + sync_batch_id,
-        # making a whole run filterable in Cloud Logging.
-        bind_contextvars(module=self._module_name, sync_batch_id=sync_batch_id)
+        # Bind once so every log line in the run carries the module + sync_batch_id,
+        # making a whole run filterable in Cloud Logging. Keyed etl_module because
+        # structlog-gcp reserves the `module` key for callsite source location.
+        bind_contextvars(etl_module=self._module_name, sync_batch_id=sync_batch_id)
         _log.info("run_started", watermark=watermark)
 
         try:

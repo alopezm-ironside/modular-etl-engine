@@ -6,21 +6,13 @@ that structlog uses to format and emit log records.
 
 from __future__ import annotations
 
-from collections.abc import MutableMapping
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 import structlog
+import structlog_gcp
 from structlog.dev import ConsoleRenderer
-from structlog.processors import (
-    EventRenamer,
-    JSONRenderer,
-    TimeStamper,
-    add_log_level,
-    dict_tracebacks,
-)
-from structlog.types import EventDict, Processor
-
-# Protocol must be imported at runtime for isinstance checks by tests/callers.
+from structlog.processors import TimeStamper, add_log_level
+from structlog.types import Processor
 
 
 @runtime_checkable
@@ -30,38 +22,16 @@ class LogBackend(Protocol):
     def processors(self) -> list[Processor]: ...
 
 
-_LEVEL_TO_SEVERITY: dict[str, str] = {
-    "debug": "DEBUG",
-    "info": "INFO",
-    "warning": "WARNING",
-    "warn": "WARNING",
-    "error": "ERROR",
-    "critical": "CRITICAL",
-}
-
-
-def _add_severity(
-    _: Any,
-    method: str,
-    event_dict: MutableMapping[str, Any],
-) -> EventDict:
-    """Set the GCP-recognised ``severity`` key from the log method name."""
-    event_dict["severity"] = _LEVEL_TO_SEVERITY.get(method.lower(), method.upper())
-    return event_dict
-
-
 class GcpLogBackend:
-    """Processor chain that emits GCP-compatible single-line JSON."""
+    """Cloud Logging JSON via structlog-gcp.
+
+    Emits the GCP-native format: severity, message, time, sourceLocation, and
+    bound context, and routes exceptions to Error Reporting (stack_trace +
+    @type). Using the library avoids hand-maintaining the GCP field mapping.
+    """
 
     def processors(self) -> list[Processor]:
-        return [
-            structlog.contextvars.merge_contextvars,
-            _add_severity,
-            TimeStamper(fmt="iso", utc=True, key="time"),
-            dict_tracebacks,
-            EventRenamer("message"),
-            JSONRenderer(),
-        ]
+        return structlog_gcp.build_processors()
 
 
 class ConsoleLogBackend:
