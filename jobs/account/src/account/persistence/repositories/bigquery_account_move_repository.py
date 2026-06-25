@@ -79,6 +79,13 @@ class BigQueryAccountMoveRepository(RepositoryInterface[AccountMove]):
 
         self._load(move_rows, self._moves_table)
         self._load(line_rows, self._lines_table)
+
+        _log.info(
+            "batch_saved",
+            moves=len(move_rows),
+            lines=len(line_rows),
+            sync_batch_id=sync_batch_id,
+        )
         return len(entities)
 
     def _load(self, rows: list[dict[str, Any]], table: str) -> None:

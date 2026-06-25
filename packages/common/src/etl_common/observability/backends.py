@@ -16,6 +16,7 @@ from structlog.processors import (
     JSONRenderer,
     TimeStamper,
     add_log_level,
+    dict_tracebacks,
 )
 from structlog.types import EventDict, Processor
 
@@ -56,7 +57,8 @@ class GcpLogBackend:
         return [
             structlog.contextvars.merge_contextvars,
             _add_severity,
-            TimeStamper(fmt="iso", utc=True),
+            TimeStamper(fmt="iso", utc=True, key="time"),
+            dict_tracebacks,
             EventRenamer("message"),
             JSONRenderer(),
         ]

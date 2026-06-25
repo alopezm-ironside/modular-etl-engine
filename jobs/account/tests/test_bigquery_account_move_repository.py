@@ -188,3 +188,23 @@ def test_save_batch_returns_entity_count():
         structlog.contextvars.clear_contextvars()
 
     assert result == 2
+
+
+def test_save_batch_emits_batch_saved_log_event():
+    repo, _ = _make_repo()
+    _bind("batch-log")
+    try:
+        with patch(
+            "account.persistence.repositories.bigquery_account_move_repository._log"
+        ) as mock_log:
+            repo.save_batch([_make_move(1)])
+    finally:
+        structlog.contextvars.clear_contextvars()
+
+    mock_log.info.assert_called_once()
+    assert mock_log.info.call_args.args[0] == "batch_saved"
+    assert mock_log.info.call_args.kwargs == {
+        "moves": 1,
+        "lines": 1,
+        "sync_batch_id": "batch-log",
+    }

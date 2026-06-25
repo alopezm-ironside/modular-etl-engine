@@ -97,6 +97,42 @@ def test_gcp_backend_clear_contextvars_removes_context(
     )
 
 
+def test_gcp_backend_uses_time_field_for_timestamp(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """GcpLogBackend emits the timestamp under GCP's recognised `time` field."""
+    clear_contextvars()
+    configure_logging(GcpLogBackend())
+
+    log = get_logger("test")
+    log.info("time_event")
+
+    parsed = json.loads(
+        [line for line in capsys.readouterr().out.splitlines() if line.strip()][-1]
+    )
+    assert "time" in parsed, f"'time' field missing: {parsed}"
+    assert "timestamp" not in parsed, f"unexpected 'timestamp' field: {parsed}"
+
+
+def test_gcp_backend_renders_exception_structured(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An exc_info log renders a structured `exception` field in the JSON."""
+    clear_contextvars()
+    configure_logging(GcpLogBackend())
+
+    log = get_logger("test")
+    try:
+        raise ValueError("boom")
+    except ValueError:
+        log.error("failed_event", exc_info=True)
+
+    parsed = json.loads(
+        [line for line in capsys.readouterr().out.splitlines() if line.strip()][-1]
+    )
+    assert "exception" in parsed, f"'exception' field missing: {parsed}"
+
+
 # ---------------------------------------------------------------------------
 # ConsoleLogBackend — human-readable, NOT valid JSON
 # ---------------------------------------------------------------------------
