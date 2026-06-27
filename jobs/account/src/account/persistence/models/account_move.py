@@ -51,6 +51,8 @@ class AccountMoveORM(Base):
     payment_state: Mapped[str] = mapped_column(String)
     ref: Mapped[str] = mapped_column(String)
 
+    write_date: Mapped[datetime | None] = mapped_column(DateTime)
+
     synced_at: Mapped[datetime] = mapped_column(
         DateTime,
         # Safety net only; the repository always sets this explicitly.

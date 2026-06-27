@@ -29,19 +29,20 @@ from etl_common.interfaces.transformer_interface import TransformerInterface
 from etl_common.observability import get_logger
 
 T = TypeVar("T")
+Cursor = TypeVar("Cursor")
 
 _log = get_logger(__name__)
 
 
-class SyncPipeline(Generic[T]):
+class SyncPipeline(Generic[T, Cursor]):
     """Composition-based ETL pipeline — invariant run() loop.
 
     Constructor args (all keyword-only):
         module_name:  Logical ETL module identifier (e.g. "accounting").
-        extractor:    Source adapter implementing ExtractorInterface.
+        extractor:    Source adapter implementing ExtractorInterface[Cursor].
         transformer:  Transform adapter implementing TransformerInterface[T].
         repository:   Sink adapter implementing RepositoryInterface[T].
-        sync_state:   Control-plane adapter implementing SyncStateInterface.
+        sync_state:   Control-plane adapter implementing SyncStateInterface[Cursor].
         batch_size:   IDs per batch (default 1 000). Wired from env/settings
                       at the composition root if env-driven sizing is needed.
     """
@@ -50,10 +51,10 @@ class SyncPipeline(Generic[T]):
         self,
         *,
         module_name: str,
-        extractor: ExtractorInterface,
+        extractor: ExtractorInterface[Cursor],
         transformer: TransformerInterface[T],
         repository: RepositoryInterface[T],
-        sync_state: SyncStateInterface,
+        sync_state: SyncStateInterface[Cursor],
         batch_size: int = 1000,
     ) -> None:
         self._module_name = module_name
@@ -70,7 +71,6 @@ class SyncPipeline(Generic[T]):
             Exception: re-raised after recording the run as failed.
         """
         watermark = self._sync_state.get_watermark(self._module_name)
-        last_processed_id = watermark
         sync_batch_id = self._sync_state.start(self._module_name)
 
         # Bind once so every log line in the run carries the module + sync_batch_id,
@@ -97,16 +97,20 @@ class SyncPipeline(Generic[T]):
                 entities: list[T] = self._transformer.transform(raw)
                 saved = self._repository.save_batch(entities)
 
-                # max(), not batch_ids[-1]: a source that breaks the ascending-id
-                # contract must not let the watermark skip past unprocessed ids.
-                last_processed_id = max(last_processed_id, max(batch_ids))
+                # Advance watermark via the extractor's cursor hook — the pipeline
+                # never interprets the cursor value, only the extractor does.
+                batch_cursor = self._extractor.max_cursor(raw)
+                watermark = (
+                    batch_cursor if watermark is None else max(watermark, batch_cursor)  # type: ignore[call-overload]
+                )
+
                 stats = SyncStats(
                     records_processed=len(batch_ids),
                     records_inserted=saved,
                     records_failed=len(batch_ids) - saved,
                     source_api_calls=1,
                 )
-                self._sync_state.checkpoint(sync_batch_id, last_processed_id, stats)
+                self._sync_state.checkpoint(sync_batch_id, watermark, stats)
                 total_records += saved
 
                 _log.info(
@@ -116,7 +120,7 @@ class SyncPipeline(Generic[T]):
                     records=saved,
                 )
 
-            self._sync_state.finish(sync_batch_id, "success", last_processed_id)
+            self._sync_state.finish(sync_batch_id, "success", watermark)
             _log.info("run_finished", status="success", total=total_records)
 
         except Exception as exc:
@@ -124,7 +128,7 @@ class SyncPipeline(Generic[T]):
             self._sync_state.finish(
                 sync_batch_id,
                 "failed",
-                last_processed_id,
+                watermark,
                 error_message=str(exc),
             )
             raise

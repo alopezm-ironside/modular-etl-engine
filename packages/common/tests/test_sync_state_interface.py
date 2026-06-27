@@ -4,10 +4,10 @@ import pytest
 from etl_common.interfaces import SyncStateInterface, SyncStats
 
 
-class CompleteSyncState(SyncStateInterface):
+class CompleteSyncState(SyncStateInterface[int]):
     """Minimal valid concrete subclass implementing all 4 abstract methods."""
 
-    def get_watermark(self, module_name: str) -> int:
+    def get_watermark(self, module_name: str) -> int | None:
         return 0
 
     def start(self, module_name: str, sync_type: str = "incremental") -> str:
@@ -16,7 +16,7 @@ class CompleteSyncState(SyncStateInterface):
     def checkpoint(
         self,
         sync_batch_id: str,
-        last_processed_id: int,
+        watermark: int | None,
         stats: SyncStats,
     ) -> None:
         pass
@@ -25,7 +25,7 @@ class CompleteSyncState(SyncStateInterface):
         self,
         sync_batch_id: str,
         status: str,
-        last_processed_id: int,
+        watermark: int | None,
         error_message: str | None = None,
     ) -> None:
         pass
@@ -83,7 +83,7 @@ def test_start_accepts_sync_type() -> None:
 
 
 def test_checkpoint_signature() -> None:
-    """checkpoint accepts sync_batch_id, last_processed_id, and SyncStats."""
+    """checkpoint accepts sync_batch_id, watermark, and SyncStats."""
     state = CompleteSyncState()
     stats = SyncStats(
         records_processed=5,
@@ -96,7 +96,7 @@ def test_checkpoint_signature() -> None:
 
 
 def test_finish_signature_success() -> None:
-    """finish accepts sync_batch_id, status, last_processed_id."""
+    """finish accepts sync_batch_id, status, watermark."""
     state = CompleteSyncState()
     state.finish("batch-001", "success", 42)
 

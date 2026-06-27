@@ -26,7 +26,7 @@ class SyncMetadata(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
     status: Mapped[str] = mapped_column(String, nullable=False)
-    last_processed_id: Mapped[int | None] = mapped_column(Integer)
+    last_processed_ts: Mapped[datetime | None] = mapped_column(DateTime)
     records_processed: Mapped[int | None] = mapped_column(Integer, default=0)
     records_inserted: Mapped[int | None] = mapped_column(Integer, default=0)
     records_failed: Mapped[int | None] = mapped_column(Integer, default=0)

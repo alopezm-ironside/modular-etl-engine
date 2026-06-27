@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from account.domain.account_move_line import AccountMoveLine
 
@@ -28,4 +29,5 @@ class AccountMove:
     state: str
     payment_state: str
     ref: str
+    write_date: datetime | None = None
     lines: list[AccountMoveLine] = field(default_factory=list)

@@ -15,6 +15,7 @@ domain/interface boundary, and also verifies the account transformer produces
 the right entity type for the repository mock.
 """
 
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -55,7 +56,7 @@ def test_crash_between_save_batch_and_checkpoint_at_account_level() -> None:
         AccountMoveTransformer,
     )
 
-    previous_watermark = 5
+    previous_watermark = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
     batch_ids = [10, 20]
 
     committed_batches: list[list[AccountMove]] = []
@@ -82,7 +83,7 @@ def test_crash_between_save_batch_and_checkpoint_at_account_level() -> None:
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(sync_batch_id="run-crash-test")
     try:
-        pipeline: SyncPipeline[AccountMove] = SyncPipeline(
+        pipeline: SyncPipeline[AccountMove, datetime] = SyncPipeline(
             module_name="accounting",
             extractor=extractor,
             transformer=transformer,

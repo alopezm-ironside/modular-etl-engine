@@ -1,11 +1,15 @@
-"""Tests for BigQuerySyncState (Phase 5 — Change 2).
+"""Tests for BigQuerySyncState datetime cursor adapter.
 
 All BigQuery/SQLAlchemy I/O is mocked — no real connections.
+Spec: R2.5, R3, S9
 """
 
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from etl_common.interfaces.sync_stats import SyncStats
+
+_UTC = timezone.utc
 
 
 def _make_connection() -> MagicMock:
@@ -14,33 +18,13 @@ def _make_connection() -> MagicMock:
     return conn
 
 
-def test_get_watermark_returns_last_processed_id_from_success_run():
-    """get_watermark returns last_processed_id from the most recent success run."""
-    from account.persistence.repositories.bigquery_sync_state import BigQuerySyncState
-
-    mock_session = MagicMock()
-    mock_row = MagicMock()
-    mock_row.last_processed_id = 500
-    query_chain = mock_session.query.return_value.filter.return_value
-    query_chain.filter.return_value.order_by.return_value.first.return_value = mock_row
-
-    with patch(
-        "account.persistence.repositories.bigquery_sync_state.Session"
-    ) as mock_session_cls:
-        mock_session_cls.return_value.__enter__ = lambda s: mock_session
-        mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
-
-        state = BigQuerySyncState(connection=_make_connection())
-        result = state.get_watermark("accounting")
-
-    assert result == 500
-    status_clause = query_chain.filter.call_args[0][0]
-    assert "status" in str(status_clause)
-    assert status_clause.right.value == "success"
+# ---------------------------------------------------------------------------
+# get_watermark
+# ---------------------------------------------------------------------------
 
 
-def test_get_watermark_returns_zero_when_no_success_run():
-    """get_watermark returns 0 if there is no prior success run."""
+def test_get_watermark_returns_none_when_no_success_run() -> None:
+    """get_watermark returns None when no prior success row exists."""
     from account.persistence.repositories.bigquery_sync_state import BigQuerySyncState
 
     mock_session = MagicMock()
@@ -56,10 +40,84 @@ def test_get_watermark_returns_zero_when_no_success_run():
         state = BigQuerySyncState(connection=_make_connection())
         result = state.get_watermark("accounting")
 
-    assert result == 0
+    assert result is None
 
 
-def test_start_inserts_running_row_and_returns_sync_batch_id():
+def test_get_watermark_returns_datetime_from_success_row() -> None:
+    """get_watermark returns last_processed_ts as datetime from most recent success."""
+    from account.persistence.repositories.bigquery_sync_state import BigQuerySyncState
+
+    expected_ts = datetime(2024, 3, 15, 10, 0, 0, tzinfo=_UTC)
+    mock_session = MagicMock()
+    mock_row = MagicMock()
+    mock_row.last_processed_ts = expected_ts
+    query_chain = mock_session.query.return_value.filter.return_value
+    query_chain.filter.return_value.order_by.return_value.first.return_value = mock_row
+
+    with patch(
+        "account.persistence.repositories.bigquery_sync_state.Session"
+    ) as mock_session_cls:
+        mock_session_cls.return_value.__enter__ = lambda s: mock_session
+        mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        state = BigQuerySyncState(connection=_make_connection())
+        result = state.get_watermark("accounting")
+
+    assert result == expected_ts
+    assert isinstance(result, datetime)
+
+
+def test_get_watermark_normalizes_naive_ts_to_aware_utc() -> None:
+    """BigQuery DATETIME round-trips as naive; get_watermark must return aware UTC.
+
+    The pipeline advances the watermark via max(watermark, extractor.max_cursor),
+    and max_cursor returns an aware UTC datetime. A naive watermark read back
+    from BigQuery would raise "can't compare offset-naive and offset-aware
+    datetimes" on the second (incremental) run.
+    """
+    from account.persistence.repositories.bigquery_sync_state import BigQuerySyncState
+
+    naive_ts = datetime(2024, 3, 15, 10, 0, 0)  # no tzinfo — as BigQuery returns it
+    mock_session = MagicMock()
+    mock_row = MagicMock()
+    mock_row.last_processed_ts = naive_ts
+    query_chain = mock_session.query.return_value.filter.return_value
+    query_chain.filter.return_value.order_by.return_value.first.return_value = mock_row
+
+    with patch(
+        "account.persistence.repositories.bigquery_sync_state.Session"
+    ) as mock_session_cls:
+        mock_session_cls.return_value.__enter__ = lambda s: mock_session
+        mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        state = BigQuerySyncState(connection=_make_connection())
+        result = state.get_watermark("accounting")
+
+    assert result is not None
+    assert result.tzinfo is not None, (
+        "watermark must be tz-aware to compare against max_cursor"
+    )
+    assert result == datetime(2024, 3, 15, 10, 0, 0, tzinfo=_UTC)
+
+
+def test_get_watermark_does_not_reference_last_processed_id() -> None:
+    """get_watermark must not access last_processed_id on the row."""
+    import inspect
+
+    from account.persistence.repositories.bigquery_sync_state import BigQuerySyncState
+
+    source = inspect.getsource(BigQuerySyncState.get_watermark)
+    assert "last_processed_id" not in source, (
+        "get_watermark must not reference last_processed_id"
+    )
+
+
+# ---------------------------------------------------------------------------
+# start
+# ---------------------------------------------------------------------------
+
+
+def test_start_inserts_running_row_and_returns_sync_batch_id() -> None:
     """start() inserts a sync_metadata row with status=running and returns unique id."""
     from account.persistence.repositories.bigquery_sync_state import BigQuerySyncState
 
@@ -84,7 +142,7 @@ def test_start_inserts_running_row_and_returns_sync_batch_id():
     assert row.sync_id == batch_id
 
 
-def test_start_returns_unique_ids():
+def test_start_returns_unique_ids() -> None:
     """Two consecutive start() calls produce different sync_batch_ids."""
     from account.persistence.repositories.bigquery_sync_state import BigQuerySyncState
 
@@ -103,14 +161,20 @@ def test_start_returns_unique_ids():
     assert id1 != id2
 
 
-def test_checkpoint_updates_run_row_in_place():
-    """checkpoint() UPDATEs the run row in place, advancing last_processed_id."""
+# ---------------------------------------------------------------------------
+# checkpoint
+# ---------------------------------------------------------------------------
+
+
+def test_checkpoint_writes_last_processed_ts() -> None:
+    """checkpoint() writes last_processed_ts; does NOT write last_processed_id."""
     from account.persistence.repositories.bigquery_sync_state import BigQuerySyncState
 
     mock_session = MagicMock()
     stats = SyncStats(
         records_processed=100, records_inserted=98, records_failed=2, source_api_calls=1
     )
+    watermark = datetime(2024, 3, 15, 10, 0, 0, tzinfo=_UTC)
 
     with patch(
         "account.persistence.repositories.bigquery_sync_state.Session"
@@ -119,17 +183,32 @@ def test_checkpoint_updates_run_row_in_place():
         mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         state = BigQuerySyncState(connection=_make_connection())
-        state.checkpoint("batch-001", last_processed_id=500, stats=stats)
+        state.checkpoint("batch-001", watermark=watermark, stats=stats)
 
     mock_session.execute.assert_called_once()
     mock_session.commit.assert_called_once()
+    # Verify the update statement references last_processed_ts not last_processed_id
+    stmt = mock_session.execute.call_args[0][0]
+    stmt_str = str(stmt)
+    assert "last_processed_ts" in stmt_str, (
+        f"checkpoint stmt must set last_processed_ts; got: {stmt_str}"
+    )
+    assert "last_processed_id" not in stmt_str, (
+        f"checkpoint stmt must not set last_processed_id; got: {stmt_str}"
+    )
 
 
-def test_finish_updates_row_with_success_status():
-    """finish() calls session.execute to UPDATE the row with status=success."""
+# ---------------------------------------------------------------------------
+# finish
+# ---------------------------------------------------------------------------
+
+
+def test_finish_writes_last_processed_ts_on_success() -> None:
+    """finish writes last_processed_ts; does NOT write last_processed_id."""
     from account.persistence.repositories.bigquery_sync_state import BigQuerySyncState
 
     mock_session = MagicMock()
+    watermark = datetime(2024, 3, 15, 10, 0, 0, tzinfo=_UTC)
 
     with patch(
         "account.persistence.repositories.bigquery_sync_state.Session"
@@ -138,7 +217,15 @@ def test_finish_updates_row_with_success_status():
         mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         state = BigQuerySyncState(connection=_make_connection())
-        state.finish("batch-001", "success", last_processed_id=1000)
+        state.finish("batch-001", "success", watermark=watermark)
 
     mock_session.execute.assert_called_once()
     mock_session.commit.assert_called_once()
+    stmt = mock_session.execute.call_args[0][0]
+    stmt_str = str(stmt)
+    assert "last_processed_ts" in stmt_str, (
+        f"finish stmt must set last_processed_ts; got: {stmt_str}"
+    )
+    assert "last_processed_id" not in stmt_str, (
+        f"finish stmt must not set last_processed_id; got: {stmt_str}"
+    )

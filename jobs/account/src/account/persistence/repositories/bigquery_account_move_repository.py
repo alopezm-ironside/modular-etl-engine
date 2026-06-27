@@ -122,6 +122,7 @@ class BigQueryAccountMoveRepository(RepositoryInterface[AccountMove]):
             state=entity.state,
             payment_state=entity.payment_state,
             ref=entity.ref,
+            write_date=entity.write_date,
             synced_at=synced_at,
             sync_batch_id=sync_batch_id,
         )

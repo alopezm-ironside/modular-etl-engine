@@ -1,17 +1,23 @@
 """Odoo XML-RPC adapter for account.move extraction."""
 
+from datetime import datetime
 from typing import Any, ClassVar
 
 from etl_common.infrastructure.odoo_manager import OdooManager
 from etl_common.interfaces.extractor_interface import ExtractorInterface
 from etl_common.interfaces.tax_cache_interface import TaxCacheInterface
 from etl_common.observability import get_logger
+from etl_common.utils.dates import parse_naive_utc
 
 _log = get_logger(__name__)
 
 
-class OdooAccountMoveExtractor(ExtractorInterface, TaxCacheInterface):
-    """Extracts account.move records and their lines from Odoo via XML-RPC."""
+class OdooAccountMoveExtractor(ExtractorInterface[datetime], TaxCacheInterface):
+    """Extracts account.move records and their lines from Odoo via XML-RPC.
+
+    Binds Cursor = datetime. Extraction is ordered write_date asc, id asc
+    so per-batch checkpointing is crash-safe (Decision 5).
+    """
 
     MOVE_FIELDS: ClassVar[list[str]] = [
         "id",
@@ -56,16 +62,40 @@ class OdooAccountMoveExtractor(ExtractorInterface, TaxCacheInterface):
     def get_source_name(self) -> str:
         return "odoo"
 
-    def fetch_new_ids(self, last_processed_id: int = 0) -> list[int]:
-        domain = [("id", ">", last_processed_id), ("line_ids", "!=", False)]
+    def cold_start_cursor(self) -> datetime | None:
+        """Return None — signals the pipeline to perform a full pull."""
+        return None
+
+    def fetch_new_ids(self, watermark: datetime | None) -> list[int]:
+        """Return IDs of account.move records to process.
+
+        When watermark is None (cold start) a full pull is performed with no
+        write_date predicate. Otherwise filters write_date >= watermark with
+        write_date asc, id asc ordering to satisfy the crash-safety invariant.
+        """
+        if watermark is None:
+            domain: list[Any] = [("line_ids", "!=", False)]
+            order = "id asc"
+        else:
+            ts_str = watermark.strftime("%Y-%m-%d %H:%M:%S")
+            domain = [("write_date", ">=", ts_str), ("line_ids", "!=", False)]
+            order = "write_date asc, id asc"
+
         move_ids = self.odoo.search(
             "account.move",
             domain,
-            order="id asc",
+            order=order,
             limit=self._extract_limit or None,
         )
-        _log.info("ids_fetched", count=len(move_ids), watermark=last_processed_id)
+        _log.info("ids_fetched", count=len(move_ids), watermark=watermark)
         return move_ids
+
+    def max_cursor(self, raw_batch: list[dict[str, Any]]) -> datetime:
+        """Return the maximum write_date seen in raw_batch as a UTC datetime."""
+        parsed = [
+            parse_naive_utc(r["write_date"]) for r in raw_batch if r.get("write_date")
+        ]
+        return max(dt for dt in parsed if dt is not None)
 
     def fetch_batch(self, ids: list[int]) -> list[dict[str, Any]]:
         if not ids:

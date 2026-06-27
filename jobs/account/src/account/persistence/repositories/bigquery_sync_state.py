@@ -2,7 +2,7 @@
 
 Owns one row in control.sync_metadata per pipeline run, updated in place:
 - start()      → INSERT row with status="running"
-- checkpoint() → UPDATE row advancing last_processed_id + counters
+- checkpoint() → UPDATE row advancing last_processed_ts + counters
 - finish()     → UPDATE row with final status and completed_at
 """
 
@@ -17,14 +17,14 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 
-class BigQuerySyncState(SyncStateInterface):
+class BigQuerySyncState(SyncStateInterface[datetime]):
     """Control-plane adapter that tracks sync runs in control.sync_metadata."""
 
     def __init__(self, connection: BigQueryConnection) -> None:
         self._engine = connection.engine
 
-    def get_watermark(self, module_name: str) -> int:
-        """Return last_processed_id from the most recent success run, else 0."""
+    def get_watermark(self, module_name: str) -> datetime | None:
+        """Return last_processed_ts from the most recent success run, else None."""
         with Session(self._engine) as session:
             row = (
                 session.query(SyncMetadata)
@@ -33,9 +33,15 @@ class BigQuerySyncState(SyncStateInterface):
                 .order_by(SyncMetadata.started_at.desc())
                 .first()
             )
-            if row and row.last_processed_id is not None:
-                return row.last_processed_id
-            return 0
+            if row and row.last_processed_ts is not None:
+                ts = row.last_processed_ts
+                # BigQuery DATETIME round-trips as naive; the pipeline compares
+                # the cursor against extractor.max_cursor (aware UTC), so the
+                # watermark must be tz-aware to avoid a naive/aware TypeError.
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                return ts
+            return None
 
     def start(self, module_name: str, sync_type: str = "incremental") -> str:
         """Insert a new run row with status=running and return its sync_batch_id."""
@@ -55,7 +61,7 @@ class BigQuerySyncState(SyncStateInterface):
     def checkpoint(
         self,
         sync_batch_id: str,
-        last_processed_id: int,
+        watermark: datetime | None,
         stats: SyncStats,
     ) -> None:
         """UPDATE the run row in place after a data commit."""
@@ -63,7 +69,7 @@ class BigQuerySyncState(SyncStateInterface):
             update(SyncMetadata)
             .where(SyncMetadata.sync_id == sync_batch_id)
             .values(
-                last_processed_id=last_processed_id,
+                last_processed_ts=watermark,
                 records_processed=stats.records_processed,
                 records_inserted=stats.records_inserted,
                 records_failed=stats.records_failed,
@@ -77,7 +83,7 @@ class BigQuerySyncState(SyncStateInterface):
         self,
         sync_batch_id: str,
         status: str,
-        last_processed_id: int,
+        watermark: datetime | None,
         error_message: str | None = None,
     ) -> None:
         """UPDATE the run row with final status and completed_at."""
@@ -87,7 +93,7 @@ class BigQuerySyncState(SyncStateInterface):
             .where(SyncMetadata.sync_id == sync_batch_id)
             .values(
                 status=status,
-                last_processed_id=last_processed_id,
+                last_processed_ts=watermark,
                 completed_at=completed_at,
                 error_message=error_message,
             )

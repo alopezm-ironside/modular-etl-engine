@@ -5,6 +5,7 @@ from typing import Any
 from etl_common.interfaces.tax_cache_interface import TaxCacheInterface
 from etl_common.interfaces.transformer_interface import TransformerInterface
 from etl_common.observability import get_logger
+from etl_common.utils.dates import parse_naive_utc
 
 from account.domain.account_move import AccountMove
 from account.domain.account_move_line import AccountMoveLine
@@ -64,6 +65,7 @@ class AccountMoveTransformer(TransformerInterface[AccountMove]):
             state=raw.get("state", ""),
             payment_state=raw.get("payment_state", ""),
             ref=raw.get("ref", ""),
+            write_date=parse_naive_utc(raw.get("write_date")),
             lines=lines,
         )
 

@@ -208,3 +208,43 @@ def test_save_batch_emits_batch_saved_log_event():
         "lines": 1,
         "sync_batch_id": "batch-log",
     }
+
+
+# ---------------------------------------------------------------------------
+# T13 — write_date is mapped from entity into the load-job row dict
+# ---------------------------------------------------------------------------
+
+
+def test_to_orm_maps_write_date_from_entity() -> None:
+    """write_date from entity appears as an ISO string in the move load-job row."""
+    repo, connection = _make_repo()
+
+    write_date_val = datetime(2024, 3, 15, 10, 0, 0, tzinfo=timezone.utc)
+    move = _make_move(1)
+    move.write_date = write_date_val
+
+    _bind("batch-wd")
+    try:
+        repo.save_batch([move])
+    finally:
+        structlog.contextvars.clear_contextvars()
+
+    move_row = _rows_by_table(connection)[MOVES_TABLE][0]
+    # _json_safe strips the tz offset and serialises to ISO string
+    assert move_row["write_date"] == write_date_val.replace(tzinfo=None).isoformat()
+
+
+def test_to_orm_maps_write_date_none_when_entity_has_none() -> None:
+    """write_date=None on entity produces None in the move load-job row."""
+    repo, connection = _make_repo()
+    move = _make_move(1)
+    # write_date defaults to None in AccountMove dataclass
+
+    _bind("batch-wd-none")
+    try:
+        repo.save_batch([move])
+    finally:
+        structlog.contextvars.clear_contextvars()
+
+    move_row = _rows_by_table(connection)[MOVES_TABLE][0]
+    assert move_row["write_date"] is None
