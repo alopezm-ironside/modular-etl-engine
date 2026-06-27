@@ -6,16 +6,19 @@ storage detail.
 """
 
 from abc import ABC, abstractmethod
+from typing import Generic, TypeVar
 
 from etl_common.interfaces.sync_stats import SyncStats
 
+Cursor = TypeVar("Cursor")
 
-class SyncStateInterface(ABC):
+
+class SyncStateInterface(ABC, Generic[Cursor]):
     """Abstract control-plane port for run lifecycle and watermark management.
 
     One run row per pipeline execution, updated in place:
     - start()      → INSERT row with status="running", return sync_batch_id
-    - checkpoint() → UPDATE row advancing last_processed_id + counters
+    - checkpoint() → UPDATE row advancing watermark + counters
     - finish()     → UPDATE row with final status and completed_at
 
     Watermark semantics: stale watermark causes reprocess, not data loss,
@@ -23,14 +26,14 @@ class SyncStateInterface(ABC):
     """
 
     @abstractmethod
-    def get_watermark(self, module_name: str) -> int:
-        """Return last_processed_id from the most recent success run.
+    def get_watermark(self, module_name: str) -> Cursor | None:
+        """Return the cursor from the most recent success run, or None.
 
         Args:
             module_name: Logical ETL module identifier (e.g. "accounting").
 
         Returns:
-            Last successfully processed ID, or 0 if no prior run exists.
+            Last successfully committed cursor, or None if no prior run exists.
         """
 
     @abstractmethod
@@ -52,7 +55,7 @@ class SyncStateInterface(ABC):
     def checkpoint(
         self,
         sync_batch_id: str,
-        last_processed_id: int,
+        watermark: Cursor | None,
         stats: SyncStats,
     ) -> None:
         """Update the run row in place after a data commit.
@@ -62,9 +65,9 @@ class SyncStateInterface(ABC):
         reprocess from the previous watermark, which is safe (Bronze append).
 
         Args:
-            sync_batch_id:      ID of the active run row.
-            last_processed_id:  Highest entity ID successfully committed.
-            stats:              Accumulation counters for this batch.
+            sync_batch_id: ID of the active run row.
+            watermark:     Highest cursor value successfully committed.
+            stats:         Accumulation counters for this batch.
         """
 
     @abstractmethod
@@ -72,14 +75,14 @@ class SyncStateInterface(ABC):
         self,
         sync_batch_id: str,
         status: str,
-        last_processed_id: int,
+        watermark: Cursor | None,
         error_message: str | None = None,
     ) -> None:
         """Finalize the run row.
 
         Args:
-            sync_batch_id:      ID of the active run row.
-            status:             "success" or "failed".
-            last_processed_id:  Final watermark for this run.
-            error_message:      Error detail when status="failed".
+            sync_batch_id: ID of the active run row.
+            status:        "success" or "failed".
+            watermark:     Final cursor for this run.
+            error_message: Error detail when status="failed".
         """
