@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 
 
 @dataclass
@@ -22,3 +23,4 @@ class AccountMoveLine:
     tax_ids: list[int] = field(default_factory=list)
     tax_rate: float = 0.0
     tax_amount: float = 0.0
+    write_date: datetime | None = None

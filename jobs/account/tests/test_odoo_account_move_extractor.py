@@ -178,3 +178,16 @@ def test_fetch_new_ids_without_limit_passes_none() -> None:
 
     _, kwargs = odoo.search.call_args
     assert kwargs["limit"] is None
+
+
+# ---------------------------------------------------------------------------
+# LINE_FIELDS includes write_date (FR-0, S-11)
+# ---------------------------------------------------------------------------
+
+
+def test_line_fields_includes_write_date() -> None:
+    """LINE_FIELDS must request write_date from Odoo for Bronze line dedup symmetry."""
+    extractor, _ = _make_extractor()
+    assert "write_date" in extractor.LINE_FIELDS, (
+        "LINE_FIELDS must include write_date for Bronze line dedup symmetry"
+    )

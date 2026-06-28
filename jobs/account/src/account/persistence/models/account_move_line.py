@@ -48,6 +48,8 @@ class AccountMoveLineORM(Base):
     tax_rate: Mapped[float] = mapped_column(Float, default=0.0)
     tax_amount: Mapped[float] = mapped_column(Float, default=0.0)
 
+    write_date: Mapped[datetime | None] = mapped_column(DateTime)
+
     synced_at: Mapped[datetime] = mapped_column(
         DateTime,
         # Safety net only; the repository always sets this explicitly.

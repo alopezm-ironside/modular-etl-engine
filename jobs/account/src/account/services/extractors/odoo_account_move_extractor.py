@@ -52,6 +52,7 @@ class OdooAccountMoveExtractor(ExtractorInterface[datetime], TaxCacheInterface):
         "account_id",
         "debit",
         "credit",
+        "write_date",
     ]
 
     def __init__(self, odoo_manager: OdooManager, extract_limit: int = 0) -> None:

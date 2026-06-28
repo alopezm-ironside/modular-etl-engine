@@ -248,3 +248,83 @@ def test_to_orm_maps_write_date_none_when_entity_has_none() -> None:
 
     move_row = _rows_by_table(connection)[MOVES_TABLE][0]
     assert move_row["write_date"] is None
+
+
+# ---------------------------------------------------------------------------
+# Line write_date — mirrors T13 for the account_move_lines load-job row
+# ---------------------------------------------------------------------------
+
+
+def _make_move_with_line_write_date(write_date_val: datetime | None) -> AccountMove:
+    line = AccountMoveLine(
+        id=10,
+        account_move_id=1,
+        product_id=5,
+        description="Product",
+        date="2024-01-15",
+        quantity=1.0,
+        price_unit=100.0,
+        discount=0.0,
+        price_subtotal=100.0,
+        price_total=119.0,
+        account_id=42,
+        account_name="Sales",
+        debit=119.0,
+        credit=0.0,
+        tax_ids=[1],
+        tax_rate=19.0,
+        tax_amount=19.0,
+        write_date=write_date_val,
+    )
+    return AccountMove(
+        id=1,
+        name="INV/2024/0001",
+        move_type="out_invoice",
+        date="2024-01-15",
+        partner_id=7,
+        partner_name="Acme",
+        company_id=1,
+        company_name="My Co",
+        journal_id=3,
+        journal_name="Customer Invoices",
+        currency_name="CLP",
+        amount_untaxed=100.0,
+        amount_tax=19.0,
+        amount_total=119.0,
+        state="posted",
+        payment_state="not_paid",
+        ref="",
+        lines=[line],
+    )
+
+
+def test_to_orm_maps_line_write_date_from_entity() -> None:
+    """write_date on a line entity appears as an ISO string in the lines row."""
+    repo, connection = _make_repo()
+
+    write_date_val = datetime(2024, 3, 15, 10, 0, 0, tzinfo=timezone.utc)
+    move = _make_move_with_line_write_date(write_date_val)
+
+    _bind("batch-line-wd")
+    try:
+        repo.save_batch([move])
+    finally:
+        structlog.contextvars.clear_contextvars()
+
+    line_row = _rows_by_table(connection)[LINES_TABLE][0]
+    assert line_row["write_date"] == write_date_val.replace(tzinfo=None).isoformat()
+
+
+def test_to_orm_maps_line_write_date_none_when_entity_has_none() -> None:
+    """write_date=None on a line entity produces None in the lines load-job row."""
+    repo, connection = _make_repo()
+    move = _make_move_with_line_write_date(None)
+
+    _bind("batch-line-wd-none")
+    try:
+        repo.save_batch([move])
+    finally:
+        structlog.contextvars.clear_contextvars()
+
+    line_row = _rows_by_table(connection)[LINES_TABLE][0]
+    assert line_row["write_date"] is None

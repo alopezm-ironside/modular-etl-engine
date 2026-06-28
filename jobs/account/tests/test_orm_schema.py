@@ -24,16 +24,27 @@ def test_account_move_orm_write_date_is_datetime_and_nullable() -> None:
     assert col.default is None, "write_date must have no default"
 
 
-def test_account_move_line_orm_has_no_write_date_column() -> None:
-    """AccountMoveLineORM must NOT have write_date (lines carry no modification ts)."""
+def test_account_move_line_orm_has_write_date_column() -> None:
+    """AccountMoveLineORM must declare write_date as a DateTime column."""
     from account.persistence.models.account_move_line import AccountMoveLineORM
     from sqlalchemy import inspect as sa_inspect
 
     mapper = sa_inspect(AccountMoveLineORM)
     col_names = {c.key for c in mapper.columns}
-    assert "write_date" not in col_names, (
-        "AccountMoveLineORM must not have write_date column"
-    )
+    assert "write_date" in col_names, "AccountMoveLineORM is missing write_date column"
+
+
+def test_account_move_line_orm_write_date_is_datetime_and_nullable() -> None:
+    """write_date on AccountMoveLineORM must be DateTime, nullable, with no default."""
+    from account.persistence.models.account_move_line import AccountMoveLineORM
+    from sqlalchemy import DateTime
+    from sqlalchemy import inspect as sa_inspect
+
+    mapper = sa_inspect(AccountMoveLineORM)
+    col = mapper.columns["write_date"]
+    assert isinstance(col.type, DateTime), f"Expected DateTime, got {type(col.type)}"
+    assert col.nullable, "write_date must be nullable"
+    assert col.default is None, "write_date must have no default"
 
 
 def test_sync_metadata_has_last_processed_ts_column() -> None:

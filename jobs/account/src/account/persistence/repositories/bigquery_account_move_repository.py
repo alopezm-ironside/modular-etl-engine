@@ -147,6 +147,7 @@ class BigQueryAccountMoveRepository(RepositoryInterface[AccountMove]):
                     tax_ids=line.tax_ids,
                     tax_rate=line.tax_rate,
                     tax_amount=line.tax_amount,
+                    write_date=line.write_date,
                     synced_at=synced_at,
                     sync_batch_id=sync_batch_id,
                 )

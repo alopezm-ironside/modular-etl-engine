@@ -96,8 +96,29 @@ def test_transformer_write_date_none_when_key_absent() -> None:
     assert result[0].write_date is None
 
 
-def test_account_move_line_domain_has_no_write_date_field() -> None:
-    """AccountMoveLine must NOT have a write_date attribute."""
+def _raw_line_with_write_date(
+    line_id: int = 10, write_date: str = "2024-03-15 10:00:00"
+) -> dict:
+    return {
+        "id": line_id,
+        "move_id": [1, "INV/2024/0001"],
+        "product_id": [5, "Product A"],
+        "name": "Line description",
+        "quantity": 1.0,
+        "price_unit": 100.0,
+        "discount": 0.0,
+        "price_subtotal": 100.0,
+        "price_total": 119.0,
+        "tax_ids": [],
+        "account_id": [42, "Sales"],
+        "debit": 119.0,
+        "credit": 0.0,
+        "write_date": write_date,
+    }
+
+
+def test_account_move_line_domain_has_write_date_field() -> None:
+    """AccountMoveLine dataclass must have a write_date: datetime | None field."""
     from account.domain.account_move_line import AccountMoveLine
 
     line = AccountMoveLine(
@@ -119,4 +140,43 @@ def test_account_move_line_domain_has_no_write_date_field() -> None:
         tax_rate=0.0,
         tax_amount=0.0,
     )
-    assert not hasattr(line, "write_date"), "AccountMoveLine must not have write_date"
+    assert hasattr(line, "write_date"), "AccountMoveLine must have a write_date field"
+    assert line.write_date is None
+
+
+def test_line_transformer_maps_write_date_to_utc_datetime() -> None:
+    """_line_to_entity must parse a raw line write_date string into a UTC datetime."""
+    from account.services.transformers.account_move_transformer import (
+        AccountMoveTransformer,
+    )
+
+    transformer = AccountMoveTransformer(tax_cache=_make_tax_cache())
+    raw = _raw_move_with_write_date()
+    raw["_lines"] = [_raw_line_with_write_date(write_date="2024-03-15 10:00:00")]
+    result = transformer.transform([raw])
+
+    assert len(result) == 1
+    assert len(result[0].lines) == 1
+    line = result[0].lines[0]
+    assert line.write_date is not None
+    assert isinstance(line.write_date, datetime)
+    expected = datetime(2024, 3, 15, 10, 0, 0, tzinfo=timezone.utc)
+    assert line.write_date == expected
+
+
+def test_line_transformer_write_date_none_when_key_absent() -> None:
+    """_line_to_entity must yield write_date=None when key is absent from raw line."""
+    from account.services.transformers.account_move_transformer import (
+        AccountMoveTransformer,
+    )
+
+    transformer = AccountMoveTransformer(tax_cache=_make_tax_cache())
+    raw = _raw_move_with_write_date()
+    line_raw = _raw_line_with_write_date()
+    line_raw.pop("write_date")
+    raw["_lines"] = [line_raw]
+    result = transformer.transform([raw])
+
+    assert len(result) == 1
+    assert len(result[0].lines) == 1
+    assert result[0].lines[0].write_date is None

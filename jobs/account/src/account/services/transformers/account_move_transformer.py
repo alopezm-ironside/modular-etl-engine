@@ -79,6 +79,7 @@ class AccountMoveTransformer(TransformerInterface[AccountMove]):
         tax_amount = price_total - price_subtotal if price_subtotal else 0.0
         tax_ids: list[int] = line_raw.get("tax_ids") or []
         tax_rate = self._tax_cache.get_tax_rate(tax_ids) if tax_ids else 0.0
+        write_date = parse_naive_utc(line_raw.get("write_date"))
 
         return AccountMoveLine(
             id=line_raw.get("id", 0),
@@ -98,4 +99,5 @@ class AccountMoveTransformer(TransformerInterface[AccountMove]):
             tax_ids=tax_ids,
             tax_rate=tax_rate,
             tax_amount=tax_amount,
+            write_date=write_date,
         )
