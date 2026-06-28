@@ -1,8 +1,9 @@
-# modular-etl-engine
+# datalake-platform
 
-Motor de ETL modular para sincronizar datos de sistemas de origen (Odoo, y por
-diseño cualquier otro) hacia un data lake en BigQuery, con una capa servida lista
-para análisis de BI.
+Plataforma de datos (medallion ELT) sobre BigQuery: ingesta datos de sistemas de
+origen (Odoo, y por diseño cualquier otro) hacia una capa raw y los modela en
+capas servidas listas para análisis de BI. Su motor de ingesta es modular y
+agnóstico del origen y del destino.
 
 Cada módulo de sincronización se empaqueta y despliega como un **Cloud Run Job**
 independiente. La orquestación es agnóstica del origen y del destino: ejecutar
@@ -12,7 +13,7 @@ solo los adaptadores inyectados.
 ## Estructura
 
 ```
-modular-etl-engine/
+datalake-platform/
 ├── pyproject.toml          # raíz del workspace uv (virtual)
 ├── packages/
 │   └── common/             # etl-common: contratos, infraestructura, pipeline genérico

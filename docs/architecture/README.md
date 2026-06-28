@@ -2,7 +2,7 @@
 
 ## Propósito y alcance
 
-`modular-etl-engine` sincroniza datos desde sistemas de origen hacia un data lake
+`datalake-platform` sincroniza datos desde sistemas de origen hacia un data lake
 analítico. El alcance actual es **Odoo → BigQuery**, pero la arquitectura es
 agnóstica del origen y del destino por diseño: la combinación `Odoo → Snowflake`
 o `SAP → BigQuery` no altera el proceso de orquestación, únicamente los
