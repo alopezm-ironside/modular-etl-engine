@@ -17,12 +17,14 @@ datalake-platform/
 ├── pyproject.toml          # raíz del workspace uv (virtual)
 ├── packages/
 │   └── common/             # etl-common: contratos, infraestructura, pipeline genérico
-└── jobs/
-    └── account/            # etl-account: ETL de account.move (un Cloud Run Job)
+├── jobs/
+│   └── account/            # etl-account: ETL de account.move (un Cloud Run Job)
+└── transform/              # proyecto dbt — capa Silver (fuera del workspace uv)
 ```
 
 - `packages/*` son **librerías** (se importan, no se ejecutan).
 - `jobs/*` son **unidades desplegables** (cada una con su `Dockerfile`; una imagen → un Cloud Run Job).
+- `transform/` es el **proyecto dbt** que produce la capa Silver. No forma parte del workspace de uv — dbt no es un paquete Python del monorepo.
 
 ## Requisitos
 
@@ -58,3 +60,4 @@ digest inmutable. La infraestructura como código vive en un repositorio separad
 - [`docs/architecture/README.md`](docs/architecture/README.md) — arquitectura del motor
 - [`docs/architecture/data-model.md`](docs/architecture/data-model.md) — modelo de datos (medallion) y consumo BI
 - [`docs/dev/adding-a-module.md`](docs/dev/adding-a-module.md) — cómo agregar un módulo nuevo
+- [`transform/README.md`](transform/README.md) — proyecto dbt: capa Silver, convenciones, cómo ejecutar

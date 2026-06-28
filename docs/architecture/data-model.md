@@ -57,27 +57,21 @@ de la capa cruda.
 
 ### Deduplicación: de Bronze a Silver
 
-Silver se deriva de Bronze quedándose con la última versión de cada `id`:
+Silver se produce con el proyecto dbt `transform/` (ver
+[`transform/README.md`](../../transform/README.md)). La lógica de deduplicación
+está encapsulada en el macro `dedup_latest(relation, unique_key, order_by)`:
+retiene una fila por `id`, la más reciente según `source_modified_at DESC,
+ingested_at DESC` (SCD Type 1). La implementación usa `ROW_NUMBER()` vía subquery
+— no `QUALIFY` — para garantizar compatibilidad incondicionanal con ZetaSQL en
+contexto paramétrico de macro.
 
-```sql
-SELECT * EXCEPT(row_num)
-FROM (
-  SELECT
-    *,
-    ROW_NUMBER() OVER (
-      PARTITION BY id
-      ORDER BY synced_at DESC
-    ) AS row_num
-  FROM `project.odoo_raw.account_moves`
-  WHERE date >= @desde   -- filtro de partición obligatorio
-)
-WHERE row_num = 1;
-```
+El predicado `where date is not null` en cada modelo satisface el
+`require_partition_filter = true` de las tablas Bronze durante el rescan completo.
 
 Silver se **materializa** (no es una vista que recalcule en cada consulta), porque
 las herramientas de BI ejecutan consultas repetidas y la ventana sobre la tabla
-Bronze completa sería costosa. La materialización se refresca al cierre de cada
-corrida del job. Al derivarse de Bronze, es **reproducible** en cualquier momento.
+Bronze completa sería costosa. Al derivarse de Bronze, es **reproducible** en
+cualquier momento con `dbt build --full-refresh`.
 
 ## Capa Gold — downstream y opcional
 
@@ -107,22 +101,23 @@ Es la fuente del watermark y la base de observabilidad de las ejecuciones.
 
 ## Organización en datasets de BigQuery
 
-| Dataset (nombre real) | Token ORM | Capa | Variable de entorno |
-| --------------------- | --------- | ---- | ------------------- |
-| p. ej. `datalake_odoo_raw` | `raw` | Bronze (append) | `BQ_DATASET_RAW` |
-| _(pendiente de implementación)_ | _(a definir)_ | Silver (deduplicada) | _(a definir)_ |
-| p. ej. `datalake_control` | `control` | Plano de control (`sync_metadata`) | `BQ_DATASET_CONTROL` |
+| Dataset (nombre real) | Capa | Variable de entorno | Propietario |
+| --------------------- | ---- | ------------------- | ----------- |
+| p. ej. `datalake_odoo_raw` | Bronze (append) | `BQ_DATASET_RAW` | IaC |
+| p. ej. `datalake_silver` | Silver (deduplicada, dbt) | `BQ_DATASET_SILVER` | IaC (pendiente Slice 3) |
+| p. ej. `datalake_control` | Plano de control (`sync_metadata`) | `BQ_DATASET_CONTROL` | IaC |
 
-> Los datasets son provistos por el IaC. La aplicación **no los crea**. El
-> conector `BigQueryConnection` recibe los nombres reales vía `BQ_DATASET_RAW` y
-> `BQ_DATASET_CONTROL` y aplica `schema_translate_map` en tiempo de ejecución.
+> Los datasets son provistos por el IaC. La aplicación de ingesta **no los crea**.
+> El conector `BigQueryConnection` recibe los nombres reales vía `BQ_DATASET_RAW`
+> y `BQ_DATASET_CONTROL` y aplica `schema_translate_map` en tiempo de ejecución.
 > Los modelos ORM usan los tokens simbólicos (`"raw"`, `"control"`) en
 > `__table_args__`; SQLAlchemy sustituye el token por el nombre real del dataset
 > al construir las consultas.
 
-> Silver requiere un dataset propio y, por lo tanto, una variable de configuración
-> adicional (`BQ_DATASET_SILVER`). Queda por definir su nombre (por ejemplo
-> `datalake_odoo_clean` o `datalake_analytics`).
+> El proyecto dbt recibe `BQ_DATASET_SILVER` como variable de entorno (ver
+> `transform/profiles.yml`). El provisioning del dataset en Terraform es parte de
+> Slice 3. **Todos los datasets deben estar en la misma location de BigQuery** —
+> BigQuery no permite queries cross-location.
 
 ## Consumo desde BI
 

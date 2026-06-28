@@ -112,8 +112,36 @@ BigQuery:
    reciente), materializada para consumo analítico.
 
 **Gold** (star schemas, data marts) es modelado downstream y opcional; no lo
-produce este motor. El detalle del modelo, la consulta de deduplicación y el
-consumo desde Metabase están en [`data-model.md`](data-model.md).
+produce este motor. El detalle del modelo y el consumo desde BI están en
+[`data-model.md`](data-model.md).
+
+### Capa Silver: proyecto dbt `transform/`
+
+La capa Silver se produce con dbt (adaptador BigQuery, dbt-fusion 2.0). El
+proyecto vive en `transform/`, **fuera del workspace de uv**.
+
+**Convención de modelos (staging):** los modelos siguen el patrón
+`stg_<fuente>__<entidad>` bajo `models/staging/<fuente>/`. Son un mirror mecánico
+de Bronze: las columnas de negocio conservan sus nombres de origen; sólo se
+conforman las columnas de auditoría (`write_date` → `source_modified_at`,
+`synced_at` → `ingested_at`). El conformado semántico multi-fuente queda diferido
+a una capa de consumo futura, lo que mantiene el staging extensible: agregar
+`stg_sap__...` no requiere modificar los modelos de Odoo.
+
+**Deduplicación:** el macro reutilizable `dedup_latest(relation, unique_key, order_by)`
+aplica `ROW_NUMBER()` via subquery (no `QUALIFY`, para evitar el requisito
+`WHERE TRUE` de ZetaSQL en contexto paramétrico). Resultado: SCD Type 1 —
+una fila por `id`, la más reciente por `source_modified_at DESC, ingested_at DESC`.
+
+**Materialización:** `table` (rescan completo + dedup en cada ejecución). Diseño
+incremental-ready: el swap a `incremental`/`merge` requiere sólo cambiar la config
+y agregar un predicado de ventana sobre el eje de ingesta (`synced_at`); el macro
+no se modifica. Ver [`transform/README.md`](../../transform/README.md) para el
+path completo.
+
+**Requisito de infraestructura:** todos los datasets de BigQuery (`BQ_DATASET_RAW`,
+`BQ_DATASET_SILVER`, `BQ_DATASET_CONTROL`) deben estar en la **misma location**.
+BigQuery no permite queries cross-location.
 
 ## Semántica de carga y resiliencia
 
@@ -241,4 +269,6 @@ flowchart LR
 | CI: quality gates en GitHub Actions (`ci.yml`) | Implementado |
 | Release: `cz bump` + changelog (`release.yml`) | Implementado |
 | `build.yml` / `deploy.yml` (build once, promote por digest, WIF) | Implementado |
-| Capa Silver (deduplicación, `BQ_DATASET_SILVER`, materializador) | Diseñado, pendiente |
+| Proyecto dbt `transform/` (staging Odoo, macro `dedup_latest`, tests) | Implementado |
+| Capa Silver: `stg_odoo__account_moves` + `stg_odoo__account_move_lines` | Implementado |
+| Provisioning dataset Silver en Terraform, orquestación Bronze → dbt, CI gate | Pendiente (Slice 3) |
